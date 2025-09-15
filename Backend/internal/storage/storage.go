@@ -13,7 +13,48 @@ import (
 	_ "github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
-
+// Definición de las variables para los nombres de archivo
+const (
+    stateFile   = "state.json"
+    metaFile    = "meta.json"
+    dbEncFile   = "db.enc"
+    authEncFile = "auth.enc"
+)
+// State define la estructura del archivo state.json
+type State struct {
+    SetupComplete bool `json:"setupComplete"`
+}
+// PostgresCredentials define la estructura de las credenciales de la base de datos
+type PostgresCredentials struct {
+    Host     string `json:"host"`
+    Port     int    `json:"port"`
+    User     string `json:"user"`
+    Password string `json:"password"`
+    DBName   string `json:"dbname"`
+}
+// LocalCredentials define las credenciales del usuario administrador local
+type LocalCredentials struct {
+    Username     string `json:"username"`
+    PasswordHash string `json:"passwordHash"`
+}
+// Meta define la estructura del archivo meta.json
+type Meta struct {
+    Version          string `json:"version"`
+    Algorithm        string `json:"algorithm"`
+    IV               string `json:"iv"`
+    EncryptedDataKey string `json:"encryptedDataKey"`
+    CreatedAt        string `json:"createdAt"`
+}
+// EncryptedFile define la estructura genérica de un archivo cifrado
+type EncryptedFile struct {
+    Nonce      string `json:"nonce"`
+    Ciphertext string `json:"ciphertext"`
+}
+// User define la estructura de un usuario en la base de datos
+type User struct {
+    ID    int
+    Email string
+}
 type Storage struct {
     State           *State
     postgresCreds   *PostgresCredentials
