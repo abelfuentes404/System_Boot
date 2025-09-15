@@ -1,16 +1,17 @@
 package storage
 
 import (
-    "database/sql"
-    "encoding/base64"
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "time"
+	"crypto/rand"
+	"database/sql"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"time"
 
-    _ "github.com/lib/pq"
-    "golang.org/x/crypto/bcrypt"
+	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Storage struct {
