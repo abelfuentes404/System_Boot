@@ -1,22 +1,17 @@
 package middleware
 
 import (
-	"context"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"time"
+    "context"
+    "net/http"
+    "os"
+    "strings"
 
-	"github.com/golang-jwt/jwt"
+    "github.com/golang-jwt/jwt"
 )
 
 // JWTAuthMiddleware verifica el token JWT
 func JWTAuthMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // En modo setup, permitir todas las requests
-        // (En una implementación real, verificaríamos el estado del setup)
-        
         tokenString := extractToken(r)
         if tokenString == "" {
             http.Error(w, "Token required", http.StatusUnauthorized)
@@ -44,29 +39,10 @@ func JWTAuthMiddleware(next http.Handler) http.Handler {
     })
 }
 
-// GenerateSetupToken genera un token JWT para el setup
-func GenerateSetupToken(username string) (string, error) {
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-        "username": username,
-        "exp":      time.Now().Add(time.Hour * 1).Unix(), // Token válido por 1 hora
-        "purpose":  "setup",
-    })
-
-    return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
-}
-
 func extractToken(r *http.Request) string {
     bearerToken := r.Header.Get("Authorization")
     if strings.HasPrefix(bearerToken, "Bearer ") {
         return strings.TrimPrefix(bearerToken, "Bearer ")
     }
     return ""
-}
-
-// LoggingMiddleware registra las solicitudes
-func LoggingMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL)
-        next.ServeHTTP(w, r)
-    })
 }

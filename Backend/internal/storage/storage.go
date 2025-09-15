@@ -1,16 +1,16 @@
 package storage
 
 import (
-	"crypto/rand"
-	"database/sql"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"log"
-	"os"
-	"time"
+    "database/sql"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
 
-	_ "github.com/lib/pq"
+    _ "github.com/lib/pq"
+    "golang.org/x/crypto/bcrypt"
 )
 
 type Storage struct {
@@ -339,7 +339,7 @@ func (s *Storage) CompleteSetup() error {
     
     // Crear credenciales locales (si no existen)
     if s.localCreds == nil {
-        hashedPassword, err := hashPassword("admin123") // Contraseña por defecto
+        hashedPassword, err := hashPassword("admin123")
         if err != nil {
             return err
         }
@@ -403,4 +403,52 @@ func (s *Storage) Reset() {
 // HasDBConfig verifica si hay configuración de base de datos
 func (s *Storage) HasDBConfig() bool {
     return s.postgresCreds != nil
+}
+
+// ValidateUserCredentials valida un usuario contra la base de datos
+func (s *Storage) ValidateUserCredentials(email, password string) (*User, error) {
+    if s.postgresCreds == nil {
+        return nil, fmt.Errorf("database not configured")
+    }
+    
+    connectionString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", 
+        s.postgresCreds.Host, s.postgresCreds.Port, s.postgresCreds.User, 
+        s.postgresCreds.Password, s.postgresCreds.DBName)
+    
+    db, err := sql.Open("postgres", connectionString)
+    if err != nil {
+        return nil, err
+    }
+    defer db.Close()
+    
+    var user User
+    var hashedPassword string
+    
+    err = db.QueryRow("SELECT id, email, password FROM users WHERE email = $1", email).
+        Scan(&user.ID, &user.Email, &hashedPassword)
+    
+    if err != nil {
+        return nil, err
+    }
+    
+    if !checkPasswordHash(password, hashedPassword) {
+        return nil, fmt.Errorf("invalid password")
+    }
+    
+    return &user, nil
+}
+
+// hashPassword genera un hash bcrypt de una contraseña
+func hashPassword(password string) (string, error) {
+    hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+    if err != nil {
+        return "", err
+    }
+    return string(hashedBytes), nil
+}
+
+// checkPasswordHash verifica una contraseña contra un hash bcrypt
+func checkPasswordHash(password, hash string) bool {
+    err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+    return err == nil
 }
