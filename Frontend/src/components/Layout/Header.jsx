@@ -1,11 +1,16 @@
 import React from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import { authService } from '../../services/auth';
 
-const Header = () => {
-  const { user, logout } = useAuth();
-
-  const handleLogout = () => {
-    logout();
+const Header = ({ user, setUser }) => {
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
   };
 
   return (

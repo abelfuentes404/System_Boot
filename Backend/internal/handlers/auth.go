@@ -1,14 +1,15 @@
 package handlers
 
 import (
-    "encoding/json"
-    "net/http"
-    "os"
-    "time"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
 
-    "github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt"
 
-    "system_boot/internal/storage"
+	"system_boot/internal/storage"
 )
 
 // GenerateSetupToken genera un token JWT para el setup
@@ -24,13 +25,18 @@ func GenerateSetupToken(username string) (string, error) {
 
 // GenerateAuthToken genera un token JWT para autenticación normal
 func GenerateAuthToken(userID int, email string) (string, error) {
+    jwtSecret := os.Getenv("JWT_SECRET")
+    if jwtSecret == "" {
+        return "", fmt.Errorf("JWT_SECRET no está configurada")
+    }
+    
     token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
         "userID": userID,
         "email":  email,
         "exp":    time.Now().Add(time.Hour * 24).Unix(),
     })
 
-    return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+    return token.SignedString([]byte(jwtSecret))
 }
 
 // HandleAuthLogin maneja el login de usuarios

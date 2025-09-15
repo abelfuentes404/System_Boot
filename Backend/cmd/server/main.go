@@ -35,8 +35,9 @@ func main() {
     r := mux.NewRouter()
 
     // Middleware
-    r.Use(middleware.LoggingMiddleware)
     r.Use(middleware.CORSMiddleware)
+    r.Use(middleware.LoggingMiddleware)
+    
 
     // API routes
     api := r.PathPrefix("/api").Subrouter()
@@ -68,7 +69,7 @@ func main() {
 
     // Servidor HTTP
     srv := &http.Server{
-        Handler:      r,
+        Handler:      middleware.CORSMiddleware(r),
         Addr:         ":" + cfg.Port,
         WriteTimeout: 15 * time.Second,
         ReadTimeout:  15 * time.Second,

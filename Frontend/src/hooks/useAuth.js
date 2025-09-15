@@ -7,32 +7,35 @@ export const useAuth = () => {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      authService.verifyToken()
-        .then((data) => {
-          setUser(data.user);
-          setLoading(false);
-        })
-        .catch(() => {
-          localStorage.removeItem('token');
-          setLoading(false);
-        });
-    } else {
-      setLoading(false);
+    const userData = localStorage.getItem('user');
+    
+    if (token && userData) {
+      setUser(JSON.parse(userData));
     }
+    setLoading(false);
   }, []);
 
   const login = async (credentials) => {
-    const data = await authService.login(credentials);
-    localStorage.setItem('token', data.token);
-    setUser(data.user);
-    return data;
+    try {
+      const data = await authService.login(credentials);
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data.user);
+      return data;
+    } catch (error) {
+      throw error;
+    }
   };
 
   const logout = async () => {
-    await authService.logout();
-    localStorage.removeItem('token');
-    setUser(null);
+    try {
+      await authService.logout();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+    } catch (error) {
+      throw error;
+    }
   };
 
   return { user, loading, login, logout };

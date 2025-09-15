@@ -1,0 +1,7 @@
+{
+    "version": "1.0",
+    "algorithm": "aes-256-gcm",
+    "iv": "s668OLMycs+CmhqO",
+    "encryptedDataKey": "5gh/iSfn2cA37EgqQONYZ6dchqGqPsHibdZZN9zMKvxfd6TVD4Torhvn0O/wZyUF",
+    "createdAt": "2025-09-15T14:21:35-06:00"
+}

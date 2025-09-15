@@ -13,6 +13,8 @@ const AdminCreation = ({ onSuccess, onBack }) => {
   const handleCreateAdmin = async () => {
     try {
       await callApi(() => setupService.createAdmin(adminData));
+      // Mostrar mensaje de éxito
+      alert('Usuario administrador procesado exitosamente. Si el email ya existía, se actualizó la contraseña.');
       onSuccess();
     } catch (err) {
       // Error manejado por useApi
@@ -56,6 +58,10 @@ const AdminCreation = ({ onSuccess, onBack }) => {
           />
         </div>
 
+        <div className="mb-4 text-sm text-gray-600">
+          <p>Nota: Si el email ya existe, se actualizará la contraseña.</p>
+        </div>
+
         <div className="flex gap-4">
           <button
             onClick={onBack}
@@ -69,7 +75,7 @@ const AdminCreation = ({ onSuccess, onBack }) => {
             disabled={loading}
             className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
           >
-            {loading ? 'Creando...' : 'Crear Admin'}
+            {loading ? 'Procesando...' : 'Crear/Actualizar Admin'}
           </button>
         </div>
       </div>

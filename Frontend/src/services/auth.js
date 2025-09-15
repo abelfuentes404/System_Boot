@@ -52,4 +52,5 @@ export const setupService = {
     const response = await api.post('/setup/complete');
     return response.data;
   },
+  
 };

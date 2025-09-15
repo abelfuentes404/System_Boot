@@ -1,43 +1,24 @@
 package storage
 
 import (
-	"crypto/rand"
-	"database/sql"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"log"
-	"os"
-	"time"
+    "crypto/rand"
+    "database/sql"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "log"
+    "os"
+    "time"
 
-	_ "github.com/lib/pq"
-	"golang.org/x/crypto/bcrypt"
+    _ "github.com/lib/pq"
+    "golang.org/x/crypto/bcrypt"
 )
-// Definición de las variables para los nombres de archivo
-const (
-    stateFile   = "state.json"
-    metaFile    = "meta.json"
-    dbEncFile   = "db.enc"
-    authEncFile = "auth.enc"
-)
-// State define la estructura del archivo state.json
+
+// Estructuras para los archivos de configuración
 type State struct {
     SetupComplete bool `json:"setupComplete"`
 }
-// PostgresCredentials define la estructura de las credenciales de la base de datos
-type PostgresCredentials struct {
-    Host     string `json:"host"`
-    Port     int    `json:"port"`
-    User     string `json:"user"`
-    Password string `json:"password"`
-    DBName   string `json:"dbname"`
-}
-// LocalCredentials define las credenciales del usuario administrador local
-type LocalCredentials struct {
-    Username     string `json:"username"`
-    PasswordHash string `json:"passwordHash"`
-}
-// Meta define la estructura del archivo meta.json
+
 type Meta struct {
     Version          string `json:"version"`
     Algorithm        string `json:"algorithm"`
@@ -45,16 +26,38 @@ type Meta struct {
     EncryptedDataKey string `json:"encryptedDataKey"`
     CreatedAt        string `json:"createdAt"`
 }
-// EncryptedFile define la estructura genérica de un archivo cifrado
+
+type PostgresCredentials struct {
+    Host     string `json:"host"`
+    Port     int    `json:"port"`
+    User     string `json:"user"`
+    Password string `json:"password"`
+    DBName   string `json:"dbname"`
+}
+
+type LocalCredentials struct {
+    Username     string `json:"username"`
+    PasswordHash string `json:"passwordHash"`
+}
+
 type EncryptedFile struct {
     Nonce      string `json:"nonce"`
     Ciphertext string `json:"ciphertext"`
 }
-// User define la estructura de un usuario en la base de datos
+
 type User struct {
-    ID    int
-    Email string
+    ID    int    `json:"id"`
+    Email string `json:"email"`
 }
+
+// Constantes para nombres de archivos
+const (
+    stateFile   = "state.json"
+    metaFile    = "meta.json"
+    dbEncFile   = "db.enc"
+    authEncFile = "auth.enc"
+)
+
 type Storage struct {
     State           *State
     postgresCreds   *PostgresCredentials
@@ -101,10 +104,19 @@ func (s *Storage) loadConfigurations() error {
         return err
     }
     
-    // Obtener master key de environment
-    masterKey := os.Getenv("MASTER_KEY")
-    if masterKey == "" {
+    // Obtener y decodificar la master key
+    masterKeyBase64 := os.Getenv("MASTER_KEY")
+    if masterKeyBase64 == "" {
         return fmt.Errorf("MASTER_KEY not set")
+    }
+    
+    masterKey, err := base64.StdEncoding.DecodeString(masterKeyBase64)
+    if err != nil {
+        return fmt.Errorf("failed to decode MASTER_KEY: %v", err)
+    }
+    
+    if len(masterKey) != 32 {
+        return fmt.Errorf("MASTER_KEY must be 32 bytes after decoding, got %d bytes", len(masterKey))
     }
     
     // Descifrar data key
@@ -118,7 +130,7 @@ func (s *Storage) loadConfigurations() error {
         return err
     }
     
-    dataKey, err := decryptData([]byte(masterKey), encryptedDataKey, nonce)
+    dataKey, err := decryptData(masterKey, encryptedDataKey, nonce)
     if err != nil {
         s.Reset()
         return fmt.Errorf("failed to decrypt data key: %v", err)
@@ -289,57 +301,133 @@ func (s *Storage) CreateTables() error {
 }
 
 // CreateAdminUser crea el usuario administrador
+// CreateAdminUser crea el usuario administrador
 func (s *Storage) CreateAdminUser(email, password string) error {
     if s.postgresCreds == nil {
         return fmt.Errorf("database configuration not set")
     }
-    
-    connectionString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", 
-        s.postgresCreds.Host, s.postgresCreds.Port, s.postgresCreds.User, 
+
+    connectionString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+        s.postgresCreds.Host, s.postgresCreds.Port, s.postgresCreds.User,
         s.postgresCreds.Password, s.postgresCreds.DBName)
-    
+
     db, err := sql.Open("postgres", connectionString)
     if err != nil {
         return err
     }
     defer db.Close()
+
+    // Verificar si el usuario ya existe
+    var existingUserID int
+    err = db.QueryRow("SELECT id FROM users WHERE email = $1", email).Scan(&existingUserID)
     
+    // Si el usuario existe, actualizar la contraseña en lugar de insertar
+    if err == nil {
+        log.Printf("Usuario %s ya existe, actualizando contraseña", email)
+        
+        // Hash de la nueva contraseña
+        hashedPassword, err := hashPassword(password)
+        if err != nil {
+            return err
+        }
+        
+        // Actualizar la contraseña del usuario existente
+        _, err = db.Exec("UPDATE users SET password = $1 WHERE email = $2", hashedPassword, email)
+        if err != nil {
+            return fmt.Errorf("error updating admin user: %v", err)
+        }
+        
+        log.Printf("Contraseña del usuario administrador %s actualizada exitosamente", email)
+        return nil
+    }
+    
+    // Si el usuario no existe (error sql.ErrNoRows), crearlo
+    if err != sql.ErrNoRows {
+        return fmt.Errorf("error checking existing user: %v", err)
+    }
+
     // Hash de la contraseña
     hashedPassword, err := hashPassword(password)
     if err != nil {
         return err
     }
-    
+
     // Insertar usuario administrador
     _, err = db.Exec("INSERT INTO users (email, password) VALUES ($1, $2)", email, hashedPassword)
-    return err
+    if err != nil {
+        return fmt.Errorf("error inserting admin user: %v", err)
+    }
+
+    log.Printf("Usuario administrador %s creado exitosamente", email)
+    return nil
 }
 
 // CompleteSetup finaliza el proceso de setup
 func (s *Storage) CompleteSetup() error {
+    log.Println("Iniciando CompleteSetup...")
+    
+    // Validar que existan credenciales de PostgreSQL
+    if s.postgresCreds == nil {
+        return fmt.Errorf("PostgreSQL credentials not configured")
+    }
+    log.Printf("Credenciales PostgreSQL: %+v", s.postgresCreds)
+    
+    // Validar que existan credenciales locales
+    if s.localCreds == nil {
+        log.Println("Creando credenciales locales por defecto...")
+        hashedPassword, err := hashPassword("admin123")
+        if err != nil {
+            return err
+        }
+        
+        s.localCreds = &LocalCredentials{
+            Username:     "admin",
+            PasswordHash: hashedPassword,
+        }
+    }
+    log.Printf("Credenciales locales: %+v", s.localCreds)
+
     // Generar data key
     dataKey := make([]byte, 32)
     if _, err := rand.Read(dataKey); err != nil {
+        log.Printf("Error generating data key: %v", err)
         return err
     }
-    
-    // Obtener master key
-    masterKey := os.Getenv("MASTER_KEY")
-    if masterKey == "" {
+    log.Println("Data key generada exitosamente")
+
+    // Obtener y decodificar la master key
+    masterKeyBase64 := os.Getenv("MASTER_KEY")
+    if masterKeyBase64 == "" {
+        log.Printf("MASTER_KEY environment variable is not set")
         return fmt.Errorf("MASTER_KEY not set")
     }
     
+    masterKey, err := base64.StdEncoding.DecodeString(masterKeyBase64)
+    if err != nil {
+        log.Printf("Error decoding MASTER_KEY: %v", err)
+        return fmt.Errorf("failed to decode MASTER_KEY: %v", err)
+    }
+    
+    if len(masterKey) != 32 {
+        log.Printf("MASTER_KEY length incorrect: got %d bytes, expected 32", len(masterKey))
+        return fmt.Errorf("MASTER_KEY must be 32 bytes after decoding, got %d bytes", len(masterKey))
+    }
+    log.Println("MASTER_KEY validada exitosamente")
+
     // Cifrar credenciales de PostgreSQL
     postgresCredsBytes, err := json.Marshal(s.postgresCreds)
     if err != nil {
+        log.Printf("Error marshaling PostgreSQL credentials: %v", err)
         return err
     }
     
     encryptedPostgres, noncePostgres, err := encryptData(dataKey, postgresCredsBytes)
     if err != nil {
+        log.Printf("Error encrypting PostgreSQL credentials: %v", err)
         return err
     }
-    
+    log.Println("Credenciales PostgreSQL cifradas exitosamente")
+
     // Guardar db.enc
     dbEnc := EncryptedFile{
         Nonce:      base64.StdEncoding.EncodeToString(noncePostgres),
@@ -348,19 +436,24 @@ func (s *Storage) CompleteSetup() error {
     
     dbEncBytes, err := json.Marshal(dbEnc)
     if err != nil {
+        log.Printf("Error marshaling db.enc: %v", err)
         return err
     }
     
     if err := writeFileWithPerms(dbEncFile, dbEncBytes, 0600); err != nil {
+        log.Printf("Error writing db.enc: %v", err)
         return err
     }
-    
+    log.Println("db.enc guardado exitosamente")
+
     // Cifrar data key con master key
-    encryptedDataKey, nonceDataKey, err := encryptData([]byte(masterKey), dataKey)
+    encryptedDataKey, nonceDataKey, err := encryptData(masterKey, dataKey)
     if err != nil {
+        log.Printf("Error encrypting data key: %v", err)
         return err
     }
-    
+    log.Println("Data key cifrada exitosamente")
+
     // Guardar meta.json
     meta := Meta{
         Version:          "1.0",
@@ -372,34 +465,26 @@ func (s *Storage) CompleteSetup() error {
     
     metaBytes, err := json.Marshal(meta)
     if err != nil {
+        log.Printf("Error marshaling meta.json: %v", err)
         return err
     }
     
     if err := writeFileWithPerms(metaFile, metaBytes, 0600); err != nil {
+        log.Printf("Error writing meta.json: %v", err)
         return err
     }
-    
-    // Crear credenciales locales (si no existen)
-    if s.localCreds == nil {
-        hashedPassword, err := hashPassword("admin123")
-        if err != nil {
-            return err
-        }
-        
-        s.localCreds = &LocalCredentials{
-            Username:     "admin",
-            PasswordHash: hashedPassword,
-        }
-    }
-    
+    log.Println("meta.json guardado exitosamente")
+
     // Cifrar y guardar credenciales locales
     localCredsBytes, err := json.Marshal(s.localCreds)
     if err != nil {
+        log.Printf("Error marshaling local credentials: %v", err)
         return err
     }
     
     encryptedAuth, nonceAuth, err := encryptData(dataKey, localCredsBytes)
     if err != nil {
+        log.Printf("Error encrypting auth credentials: %v", err)
         return err
     }
     
@@ -410,24 +495,31 @@ func (s *Storage) CompleteSetup() error {
     
     authEncBytes, err := json.Marshal(authEnc)
     if err != nil {
+        log.Printf("Error marshaling auth.enc: %v", err)
         return err
     }
     
     if err := writeFileWithPerms(authEncFile, authEncBytes, 0600); err != nil {
+        log.Printf("Error writing auth.enc: %v", err)
         return err
     }
-    
+    log.Println("auth.enc guardado exitosamente")
+
     // Marcar setup como completo
     s.State.SetupComplete = true
     stateBytes, err := json.Marshal(s.State)
     if err != nil {
+        log.Printf("Error marshaling state: %v", err)
         return err
     }
     
     if err := writeFileWithPerms(stateFile, stateBytes, 0600); err != nil {
+        log.Printf("Error writing state.json: %v", err)
         return err
     }
-    
+    log.Println("state.json actualizado exitosamente")
+
+    log.Println("Setup completado exitosamente!")
     return nil
 }
 
